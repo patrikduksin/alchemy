@@ -250,6 +250,44 @@ describe("AWS.Lambda.HttpServer", () => {
     expect(result.body).toBeUndefined();
     expect(reported.some((error) => error.message.includes("Boom"))).toBe(true);
   });
+
+  it("does not expose sensitive error context over HTTP", async () => {
+    const sensitiveContext = [
+      "sk_live_alchemy_super_secret",
+      "tenant-customer-42",
+      "/srv/alchemy/private/customer-42.json",
+      "10.42.0.17",
+    ];
+    const reported: Error[] = [];
+    const result = asStructuredResult(
+      await invoke(
+        makeEvent({
+          rawPath: "/private",
+          requestContext: {
+            http: {
+              method: "GET",
+              path: "/private",
+            },
+          } as LambdaFunctionURLEvent["requestContext"],
+        }),
+        Effect.fail(
+          new Error(`Sensitive handler context: ${sensitiveContext.join(" ")}`),
+        ).pipe(Effect.orDie),
+        ErrorReporter.make(({ error }) => reported.push(error)),
+      ),
+    );
+
+    const wireResponse = JSON.stringify(result);
+    expect(result.statusCode).toBe(500);
+    expect(result.headers?.["content-type"]).toBeUndefined();
+    expect(result.body).toBeUndefined();
+    for (const sensitiveValue of sensitiveContext) {
+      expect(wireResponse).not.toContain(sensitiveValue);
+      expect(
+        reported.some((error) => error.message.includes(sensitiveValue)),
+      ).toBe(true);
+    }
+  });
 });
 
 const invoke = async (
