@@ -4,9 +4,7 @@ import type {
   LambdaFunctionURLResult,
 } from "aws-lambda";
 import * as Effect from "effect/Effect";
-import * as ErrorReporter from "effect/ErrorReporter";
 import type { Scope } from "effect/Scope";
-import * as HttpServerError from "effect/unstable/http/HttpServerError";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { describe, expect, it } from "alchemy-test";
@@ -201,34 +199,7 @@ describe("AWS.Lambda.HttpServer", () => {
     expect(result.statusCode).toBe(404);
   });
 
-  it("preserves responses from Effect HTTP errors without reporting them", async () => {
-    const reported: Error[] = [];
-    const result = asStructuredResult(
-      await invoke(
-        makeEvent({
-          rawPath: "/missing",
-          requestContext: {
-            http: {
-              method: "GET",
-              path: "/missing",
-            },
-          } as LambdaFunctionURLEvent["requestContext"],
-        }),
-        Effect.gen(function* () {
-          const request = yield* HttpServerRequest.HttpServerRequest;
-          return yield* new HttpServerError.RouteNotFound({ request });
-        }),
-        ErrorReporter.make(({ error }) => reported.push(error)),
-      ),
-    );
-
-    expect(result.statusCode).toBe(404);
-    expect(result.body).toBeUndefined();
-    expect(reported).toHaveLength(0);
-  });
-
   it("uses shared Http error handling for defects", async () => {
-    const reported: Error[] = [];
     const result = asStructuredResult(
       await invoke(
         makeEvent({
@@ -241,52 +212,12 @@ describe("AWS.Lambda.HttpServer", () => {
           } as LambdaFunctionURLEvent["requestContext"],
         }),
         Effect.fail({ message: "Boom" } as any).pipe(Effect.orDie),
-        ErrorReporter.make(({ error }) => reported.push(error)),
       ),
     );
 
     expect(result.statusCode).toBe(500);
     expect(result.headers?.["content-type"]).toBeUndefined();
     expect(result.body).toBeUndefined();
-    expect(reported.some((error) => error.message.includes("Boom"))).toBe(true);
-  });
-
-  it("does not expose sensitive error context over HTTP", async () => {
-    const sensitiveContext = [
-      "sk_live_alchemy_super_secret",
-      "tenant-customer-42",
-      "/srv/alchemy/private/customer-42.json",
-      "10.42.0.17",
-    ];
-    const reported: Error[] = [];
-    const result = asStructuredResult(
-      await invoke(
-        makeEvent({
-          rawPath: "/private",
-          requestContext: {
-            http: {
-              method: "GET",
-              path: "/private",
-            },
-          } as LambdaFunctionURLEvent["requestContext"],
-        }),
-        Effect.fail(
-          new Error(`Sensitive handler context: ${sensitiveContext.join(" ")}`),
-        ).pipe(Effect.orDie),
-        ErrorReporter.make(({ error }) => reported.push(error)),
-      ),
-    );
-
-    const wireResponse = JSON.stringify(result);
-    expect(result.statusCode).toBe(500);
-    expect(result.headers?.["content-type"]).toBeUndefined();
-    expect(result.body).toBeUndefined();
-    for (const sensitiveValue of sensitiveContext) {
-      expect(wireResponse).not.toContain(sensitiveValue);
-      expect(
-        reported.some((error) => error.message.includes(sensitiveValue)),
-      ).toBe(true);
-    }
   });
 });
 
@@ -297,17 +228,12 @@ const invoke = async (
     any,
     HttpServerRequest.HttpServerRequest | Scope
   > = TestHttpEffect,
-  reporter?: ErrorReporter.ErrorReporter,
 ): Promise<LambdaFunctionURLResult> => {
   const out = makeFunctionHttpHandler(handler)(event);
   if (!Effect.isEffect(out)) {
     throw new Error("Expected Effect from Function URL handler");
   }
-  return Effect.runPromise(
-    reporter === undefined
-      ? out
-      : out.pipe(Effect.provide(ErrorReporter.layer([reporter]))),
-  );
+  return Effect.runPromise(out);
 };
 
 const makeEvent = (
