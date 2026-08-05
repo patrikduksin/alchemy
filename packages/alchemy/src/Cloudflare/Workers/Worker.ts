@@ -37,7 +37,7 @@ import type { DispatchNamespace } from "../WorkersForPlatforms/DispatchNamespace
 import type { WorkflowExport } from "../Workflows/Workflow.ts";
 import type { Reference as ZoneReference } from "../Zone/lookup.ts";
 import { type Assets, type AssetsProps } from "./Assets.ts";
-import { type DurableObjectExport } from "./DurableObject.ts";
+import { type WorkerDurableObjectExport } from "./DurableObject.ts";
 import { Request } from "./Request.ts";
 import { bindWorkerAsyncBindings } from "./WorkerAsyncBindings.ts";
 import type {
@@ -715,7 +715,7 @@ export interface WorkerProps<
    * Populated automatically from bindings; do not set manually.
    * @internal
    */
-  exports?: Record<string, DurableObjectExport | WorkflowExport>;
+  exports?: Record<string, WorkerDurableObjectExport | WorkflowExport>;
   /**
    * Environment variables and native Cloudflare Bindings to bind to
    * the Worker. Accepts:
@@ -2113,7 +2113,7 @@ export const Worker: ResourceClassLike<Worker> &
             never,
             | Extract<Deps, Container.Application<any>>
             | Providers
-            | Exclude<InitReq, Self | WorkerServices>
+            | Exclude<PropsReq | InitReq, Self | WorkerServices>
           >;
         };
     };

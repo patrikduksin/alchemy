@@ -9,7 +9,7 @@ import {
   unpackEnvValue,
 } from "../../RuntimeContext.ts";
 import type * as Serverless from "../../Serverless/index.ts";
-import type { DurableObjectExport } from "./DurableObject.ts";
+import type { WorkerDurableObjectExport } from "./DurableObject.ts";
 import { makeRequestHandler } from "./HttpServer.ts";
 import {
   ExportedHandlerMethods,
@@ -28,7 +28,8 @@ export interface WorkerRuntimeContext extends Serverless.FunctionContext {
 
 export const makeWorkerRuntimeContext = (id: string): WorkerRuntimeContext => {
   const listeners: Effect.Effect<Serverless.FunctionListener>[] = [];
-  const exports: Record<string, DurableObjectExport | WorkflowExport> = {};
+  const exports: Record<string, WorkerDurableObjectExport | WorkflowExport> =
+    {};
   const env: Record<string, any> = {};
   let userShape: Record<string, unknown> | undefined;
 

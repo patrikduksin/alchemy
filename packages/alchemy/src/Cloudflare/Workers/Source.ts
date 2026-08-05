@@ -20,7 +20,7 @@ import type { Artifacts } from "../../Artifacts.ts";
 import type * as Bundle from "../../Bundle/Bundle.ts";
 import type { WorkflowExport } from "../Workflows/Workflow.ts";
 import type { AssetReadResult, ValidationError } from "./Assets.ts";
-import type { DurableObjectExport } from "./DurableObject.ts";
+import type { WorkerDurableObjectExport } from "./DurableObject.ts";
 import { makeInlineScriptSource } from "./Sources/InlineScript.ts";
 import { makePrebuiltSource } from "./Sources/Prebuilt.ts";
 import { isPythonMain, makePythonSource } from "./Sources/Python.ts";
@@ -89,7 +89,10 @@ export interface SourceContext {
     | { readonly kind: "external" }
     | {
         readonly kind: "effect";
-        readonly exports: Record<string, DurableObjectExport | WorkflowExport>;
+        readonly exports: Record<
+          string,
+          WorkerDurableObjectExport | WorkflowExport
+        >;
       };
   readonly stack: { readonly name: string; readonly stage: string };
   /**

@@ -222,7 +222,7 @@ const isContainerApplicationResource = (
  * Effect-native path (`ContainerPlatform.bind`), resolved through bindings +
  * precreate.
  */
-const bindContainerClass = Effect.fn(function* (
+export const bindContainerClass = Effect.fn(function* (
   resource: Worker,
   bindingName: string,
   decl: Container.Decl.Any,

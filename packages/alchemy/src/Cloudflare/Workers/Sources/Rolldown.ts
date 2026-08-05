@@ -13,8 +13,10 @@ import {
   type WorkflowExport,
 } from "../../Workflows/Workflow.ts";
 import {
+  isForeignDurableObjectExport,
   isDurableObjectExport,
-  type DurableObjectExport,
+  type ForeignDurableObjectExport,
+  type WorkerDurableObjectExport,
 } from "../DurableObject.ts";
 import type { SourceContext, SourceProvider } from "../Source.ts";
 import { bundleSource } from "./shared.ts";
@@ -51,7 +53,7 @@ export interface WorkerBundleOptions {
       }
     | {
         kind: "effect";
-        exports: Record<string, DurableObjectExport | WorkflowExport>;
+        exports: Record<string, WorkerDurableObjectExport | WorkflowExport>;
       };
   stack: { name: string; stage: string };
   extraOptions: WorkerBuildOptions | undefined;
@@ -210,16 +212,38 @@ export const WorkerBundle = Effect.gen(function* () {
 });
 
 export const makeEffectVirtualEntry = (
-  exports: Record<string, DurableObjectExport | WorkflowExport>,
+  exports: Record<string, WorkerDurableObjectExport | WorkflowExport>,
   stack: { name: string; stage: string },
 ) => {
   const doClasses: string[] = [];
   const wfClasses: string[] = [];
+  const foreignClasses: Array<
+    ForeignDurableObjectExport & { readonly className: string }
+  > = [];
   for (const [className, entry] of Object.entries(exports)) {
     if (isDurableObjectExport(entry)) {
       doClasses.push(className);
+    } else if (isForeignDurableObjectExport(entry)) {
+      foreignClasses.push({ ...entry, className });
     } else if (isWorkflowExport(entry)) {
       wfClasses.push(className);
+    }
+  }
+  const generatedNames = new Set(["default", ...doClasses, ...wfClasses]);
+  for (const entry of foreignClasses) {
+    assertExportName(entry.className);
+    assertExportName(entry.exportName);
+    if (generatedNames.has(entry.className)) {
+      throw new Error(`Duplicate Worker export '${entry.className}'`);
+    }
+    generatedNames.add(entry.className);
+    for (const [name, exported] of Object.entries(entry.exports)) {
+      assertExportName(name);
+      assertExportName(exported.exportName ?? name);
+      if (generatedNames.has(name)) {
+        throw new Error(`Duplicate Worker export '${name}'`);
+      }
+      generatedNames.add(name);
     }
   }
   const hasDoClasses = doClasses.length > 0;
@@ -262,7 +286,22 @@ ${[
       ]
     : []),
 ].join("\n")}
+${foreignClasses
+  .flatMap((entry) => [
+    `export { ${entry.exportName} as ${entry.className} } from ${JSON.stringify(entry.module)};`,
+    ...Object.entries(entry.exports).map(
+      ([name, exported]) =>
+        `export { ${exported.exportName ?? name} as ${name} } from ${JSON.stringify(exported.module)};`,
+    ),
+  ])
+  .join("\n")}
 `;
+};
+
+const assertExportName = (name: string) => {
+  if (!/^[$A-Z_a-z][$\w]*$/.test(name) || name === "default") {
+    throw new Error(`Invalid Worker export name '${name}'`);
+  }
 };
 
 /**

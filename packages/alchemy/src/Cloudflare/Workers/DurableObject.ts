@@ -26,6 +26,7 @@ import {
   isWorker,
   Worker,
   WorkerEnvironment,
+  type WorkerBindingProps,
   type WorkerServices,
 } from "./Worker.ts";
 
@@ -43,6 +44,27 @@ export const isDurableObjectExport = (
   value: unknown,
 ): value is DurableObjectExport =>
   typeof value === "object" && (value as any)?.kind === "durableObject";
+
+export interface ForeignDurableObjectModuleExport {
+  readonly module: string;
+  readonly exportName?: string;
+}
+
+export interface ForeignDurableObjectExport {
+  readonly kind: "foreignDurableObject";
+  readonly module: string;
+  readonly exportName: string;
+  readonly exports: Readonly<Record<string, ForeignDurableObjectModuleExport>>;
+}
+
+export const isForeignDurableObjectExport = (
+  value: unknown,
+): value is ForeignDurableObjectExport =>
+  typeof value === "object" && (value as any)?.kind === "foreignDurableObject";
+
+export type WorkerDurableObjectExport =
+  | DurableObjectExport
+  | ForeignDurableObjectExport;
 
 export type DurableObjectId = cf.DurableObjectId;
 export type DurableObjectJurisdiction = cf.DurableObjectJurisdiction;
@@ -258,6 +280,31 @@ export interface DurableObjectProps {
   // namespaceId?: string | undefined;
 }
 
+export interface ForeignDurableObjectProps {
+  /**
+   * Static module that exports the foreign Durable Object class.
+   */
+  module: string;
+  /**
+   * Name of the class export in {@link module}.
+   *
+   * @default The Durable Object class name.
+   */
+  exportName?: string;
+  /**
+   * Container declaration that backs the foreign Durable Object class.
+   */
+  container: Container.Decl.Any;
+  /**
+   * Native Worker bindings that the foreign class reads from its environment.
+   */
+  bindings?: WorkerBindingProps;
+  /**
+   * Additional named exports required by the foreign class.
+   */
+  exports?: Readonly<Record<string, ForeignDurableObjectModuleExport>>;
+}
+
 export interface DurableObjectClass extends Effect.Effect<
   DurableObject,
   never,
@@ -280,6 +327,15 @@ export interface DurableObjectClass extends Effect.Effect<
           | Dependencies<Self>
           | Effect.Effect<Dependencies<Self>, never, Req>,
       ): Effect.Effect<DurableObject<Self>, never, Worker | Req>;
+      host<Req = never>(
+        props:
+          | ForeignDurableObjectProps
+          | Effect.Effect<ForeignDurableObjectProps, never, Req>,
+      ): Effect.Effect<
+        cf.DurableObjectNamespace<Self & cf.Rpc.DurableObjectBranded>,
+        never,
+        Worker | Req
+      >;
       make<Req = never>(
         impl: Effect.Effect<
           Effect.Effect<
@@ -1296,6 +1352,50 @@ export const DurableObject: DurableObjectClass = taggedFunction(
             Effect.Effect<DurableObjectShape, never, DurableObjectState | Req>
           >,
         ) => Layer.effect(tag, make(impl as any));
+
+        static host = <Req = never>(
+          propsOrEffect:
+            | ForeignDurableObjectProps
+            | Effect.Effect<ForeignDurableObjectProps, never, Req>,
+        ) =>
+          Effect.gen(function* () {
+            if (globalThis.__ALCHEMY_RUNTIME__) {
+              const env = yield* WorkerEnvironment;
+              const foreignNamespace = env[namespace];
+              if (
+                foreignNamespace === undefined ||
+                typeof foreignNamespace.getByName !== "function"
+              ) {
+                return yield* Effect.die(
+                  new Error(`DurableObject '${namespace}' not found`),
+                );
+              }
+              return foreignNamespace as cf.DurableObjectNamespace<any>;
+            }
+
+            const props = Effect.isEffect(propsOrEffect)
+              ? yield* propsOrEffect
+              : propsOrEffect;
+            const className =
+              props.container["~alchemy/Container/ClassName"] ?? namespace;
+            const worker = yield* Worker;
+
+            const { bindContainerClass, bindWorkerAsyncBindings } =
+              yield* Effect.promise(() => import("./WorkerAsyncBindings.ts"));
+            yield* bindWorkerAsyncBindings(worker, {
+              env: props.bindings,
+            });
+            yield* bindContainerClass(worker, namespace, props.container);
+
+            yield* worker.export(className, {
+              kind: "foreignDurableObject",
+              module: props.module,
+              exportName: props.exportName ?? className,
+              exports: props.exports ?? {},
+            } satisfies ForeignDurableObjectExport);
+
+            return undefined as unknown as cf.DurableObjectNamespace<any>;
+          });
 
         static from = (
           worker: string | Worker | Effect.Effect<Worker, any, any>,

@@ -19,6 +19,7 @@ import {
 } from "../../Runtime.ts";
 import { Self } from "../../Self.ts";
 import { Stack } from "../../Stack.ts";
+import { Stage } from "../../Stage.ts";
 import { buildEventTelemetry } from "../../Telemetry.ts";
 import { CloudflareEnvironment } from "../CloudflareEnvironment.ts";
 import cloudflare_workers from "./cloudflare_workers.ts";
@@ -256,7 +257,9 @@ const getSharedBuild = (
     }
   >;
 
-  const layer = makeEntrypointLayer(tag, entrypoint);
+  const layer = makeEntrypointLayer(tag, entrypoint).pipe(
+    Layer.provideMerge(Layer.succeed(Stage, stack.stage)),
+  );
 
   const platform = Layer.mergeAll(
     NodeServices.layer,

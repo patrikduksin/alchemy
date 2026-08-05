@@ -38,7 +38,10 @@ import {
   uploadAssets,
 } from "./Assets.ts";
 import { getCompatibility } from "./Compatibility.ts";
-import { isDurableObjectExport } from "./DurableObject.ts";
+import {
+  isDurableObjectExport,
+  isForeignDurableObjectExport,
+} from "./DurableObject.ts";
 import { LocalWorkerProvider } from "./LocalWorkerProvider.ts";
 import { makeSourceContext, resolveSource } from "./Source.ts";
 import {
@@ -4401,7 +4404,11 @@ export const LiveWorkerProvider = () =>
           // against the precreate stub rather than the final reconcile output —
           // fails because the namespace id it needs never surfaced.
           const exportDerived = Object.keys(exportMap)
-            .filter((logicalId) => isDurableObjectExport(exportMap[logicalId]))
+            .filter(
+              (logicalId) =>
+                isDurableObjectExport(exportMap[logicalId]) ||
+                isForeignDurableObjectExport(exportMap[logicalId]),
+            )
             .map((logicalId) => ({ logicalId, className: logicalId }));
           // Transfer-destination classes are excluded from the placeholder
           // entirely (class list, bindings, tags): Cloudflare forbids
